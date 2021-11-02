@@ -1,0 +1,118 @@
+/* ------------------------------------------------------------ */
+/* db2-connect-memory-test: Brandl Wolfgang                     */
+/* Bundesrechenzentrum,    Vienna. 2016-09-08                   */
+/* ------------------------------------------------------------ */
+#include <stdio.h>
+#include <fcntl.h>
+#include <stdarg.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sqlca.h>
+#include <string.h>
+#include <time.h>
+
+#include <sql.h>
+
+EXEC SQL BEGIN DECLARE SECTION;
+    char dbase [17];
+    char firstname[13];
+    char lastname[16];
+    char xmldata[2000];
+    static SQL TYPE IS CLOB(8k) xmlclob1 ;
+EXEC SQL END DECLARE SECTION;
+
+EXEC SQL INCLUDE SQLCA;
+
+/* ------------------------------------------------------------ */
+int Select_job()
+{
+  int         i=0x00;
+  int         num=0x00;
+
+  memset (xmldata,0x00,sizeof(xmldata));
+  strcpy (xmldata,"<collectactdata>WITH DETAILS AND VALUES</collectactdata><collectactpartition>ALL</collectactpartition>");
+  printf("Select_job: Connect\n");
+  EXEC SQL CONNECT TO :dbase;
+  if (sqlca.sqlcode) {
+    printf("Select_job: CONNECT: %d\n", sqlca.sqlcode);
+    exit (8);
+  }
+  strcpy(xmlclob1.data, xmldata);
+  xmlclob1.length = strlen(xmldata) + 1;
+/*  EXEC SQL CALL WLM_SET_CONN_ENV( NULL, '''<collectactdata>WITH DETAILS,SECTION</collectactdata><collectactpartition>ALL</collectactpartition>'''); */
+  EXEC SQL CALL WLM_SET_CONN_ENV( NULL, :xmldata); 
+  if (sqlca.sqlcode){
+    printf("Select_job: WLM_SET_CONN_ENV : %d\n", sqlca.sqlcode);
+    exit (8);
+  }
+  for (num=0; num < 10; num++) {
+    if (num >9) break;
+    EXEC SQL DECLARE c1 CURSOR FOR SELECT FIRSTNME,LASTNAME FROM EMPLOYEE ;
+    if (sqlca.sqlcode){
+      printf("Select_job: Declare Cursor: %d\n", sqlca.sqlcode);
+    }
+    printf("Select_job: Open Cursor\n");
+    EXEC SQL OPEN c1;
+    if (sqlca.sqlcode){
+      printf("Select_job: Open Cursor: %d\n", sqlca.sqlcode);
+    }
+
+    for (i=0;i<10;i++) {
+      memset (firstname,0x00,sizeof(firstname));
+      memset (lastname,0x00,sizeof(lastname));
+      EXEC SQL FETCH c1 INTO :firstname, :lastname;
+      if (sqlca.sqlcode){
+        printf("Select_job: Fetch Cursor: %d\n", sqlca.sqlcode);
+        break;
+      } else {
+        printf("Select_job: Firstname:<%s> Lastname:<%s>\n",firstname,lastname);
+      }
+    }
+    printf("Select_job: Close Cursor\n");
+    EXEC SQL CLOSE c1;
+
+    EXEC SQL commit work;
+    if (sqlca.sqlcode){
+      printf("Select_job: Commit: %d\n", sqlca.sqlcode);
+      exit(8);
+    }
+  }
+  printf("Select_job: DisConnect\n");
+  memset (xmldata,0x00,sizeof(xmldata));
+  strcpy (xmldata,"<collectactdata>NONE</collectactdata>");
+  strcpy(xmlclob1.data, xmldata);
+  xmlclob1.length = strlen(xmldata) + 1;
+//  EXEC SQL CALL WLM_SET_CONN_ENV( NULL, '<collectactdata>NONE</collectactdata>'); 
+  EXEC SQL CALL WLM_SET_CONN_ENV( NULL, :xmldata); 
+  if (sqlca.sqlcode){
+    printf("WLM: WLM_SET_CONN_ENV Cursor: %d\n", sqlca.sqlcode);
+    exit (8);
+  }
+  EXEC SQL CONNECT RESET;
+  if (sqlca.sqlcode != 0) {
+    printf("Select_job: CONNECT RESET: %d\n", sqlca.sqlcode);
+    exit (8);
+  }
+}
+/* ------------------------------------------------------------ */
+int main (const int iArgs, const char * ppszArgs[])
+{
+  int 		hf;
+
+  if (iArgs < 2) {
+    printf("wlmtest <database name>\n\n");
+    exit (8);
+  } else {
+    strcpy (dbase  , (iArgs > 1) ? ppszArgs[1] : "");
+  }
+  Select_job();
+
+  printf("wlmtest terminated.\n");
+
+  return EXIT_SUCCESS;
+} /* main */
+
+/* --- eof wlmtest.sqc ----------------------------------------- */
